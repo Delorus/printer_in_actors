@@ -26,6 +26,10 @@ class MockPrinter implements Printer {
         rechargeCancelPrintingBarrier();
         startPrintingNotifier.countDown();
         queue.transfer(document);
+        if (cancelled) {
+            cancelled = false;
+            throw new InterruptedException("cancelled");
+        }
         rechargeStartPrintingBarrier();
     }
 
@@ -47,6 +51,7 @@ class MockPrinter implements Printer {
 
     @Override
     public void stop() {
+        cancelled = true;
         queue.clear();
         cancelPrintingNotifier.countDown();
     }

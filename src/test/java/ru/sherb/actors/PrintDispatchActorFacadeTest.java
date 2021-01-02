@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
@@ -112,7 +113,6 @@ class PrintDispatchActorFacadeTest {
     }
 
     @Test
-    @Disabled("нужно сделать получение отмененного документа из принтера")
     public void testCancelActiveDoc() throws InterruptedException {
         // Setup
         var printer = new MockPrinter();
@@ -125,7 +125,8 @@ class PrintDispatchActorFacadeTest {
         printDispatcher.cancelCurrent();
 
         // Then
-//        assertEquals(expectedDocument, actual);
+        assertTrue(printDispatcher.listPrinted().stream()
+            .noneMatch(Predicate.isEqual(expectedDocument)));
 
         // Cleanup
         printDispatcher.stop();
@@ -162,10 +163,10 @@ class PrintDispatchActorFacadeTest {
         var first = new MockDocument().name("a");
         var second = new MockDocument().name("b");
         printDispatcher.addToPrint(first);
-        printDispatcher.addToPrint(second);
+        var handle = printDispatcher.addToPrintAndWait(second);
         printer.skip();
         printer.skip();
-//        printDispatcher.action("b").waitForFinish();
+        handle.get();
 
         // When
         var printedList = printDispatcher.listPrinted();
@@ -189,9 +190,8 @@ class PrintDispatchActorFacadeTest {
         printDispatcher.addToPrint(printed);
         printDispatcher.addToPrint(notPrinted);
         printer.skip();
-//        printDispatcher.action("a").waitForFinish();
         printer.waitForStartPrinting();
-        printDispatcher.cancelCurrent(/*"b"*/);
+        printDispatcher.cancelCurrent();
 
         // When
         var printedList = printDispatcher.listPrinted();
@@ -245,16 +245,15 @@ class PrintDispatchActorFacadeTest {
         printer.skip();
         printer.skip();
         printer.skip();
-//        printDispatcher.action("c").waitForFinish();
 
         // When
         var paperSizeSorted = printDispatcher.listPrinted(Comparator.comparing(d -> d.size().width()));
 
         // Then
         assertEquals(3, paperSizeSorted.size(), paperSizeSorted::toString);
-        assertEquals(third, paperSizeSorted.get(0));
+        assertEquals(second, paperSizeSorted.get(0));
         assertEquals(first, paperSizeSorted.get(1));
-        assertEquals(second, paperSizeSorted.get(2));
+        assertEquals(third, paperSizeSorted.get(2));
 
         // When
         var printDurationSorted = printDispatcher.listPrinted(Comparator.comparing(Printable::printDuration));
@@ -294,8 +293,6 @@ class PrintDispatchActorFacadeTest {
         printDispatcher.addToPrint(second);
         printer.skip();
         printer.skip();
-
-//        assertEquals(PrintDispatcherImpl.PrintResult.COMPLETE, future.get());
 
         // When
         Duration avg = printDispatcher.avgPrintedTime();

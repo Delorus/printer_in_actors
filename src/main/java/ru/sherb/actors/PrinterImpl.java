@@ -8,9 +8,7 @@ import akka.actor.typed.javadsl.AbstractBehavior;
 import akka.actor.typed.javadsl.ActorContext;
 import akka.actor.typed.javadsl.Behaviors;
 import akka.actor.typed.javadsl.Receive;
-import akka.pattern.CircuitBreaker;
 import lombok.Value;
-import org.slf4j.Logger;
 import ru.sherb.printer.Printable;
 import ru.sherb.printer.Printer;
 import scala.concurrent.ExecutionContextExecutor;
@@ -27,8 +25,7 @@ import java.util.concurrent.CompletionException;
  */
 public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
 
-    interface Command {
-    }
+    interface Command { }
 
     @Value
     static class Print implements Command {
@@ -82,29 +79,23 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
     }
 
     private Behavior<PrinterImpl.Command> onPrint(Print cmd) {
-        Logger log = getContext().getLog();
-
         cmd.consumer.tell(new DocumentAddedToQueue());
-        if (!currentTask.isDone()) {
-            log.info("add document to queue: {}", cmd.document.name());
-            queue.add(cmd);
-            return this;
-        }
+        queue.add(cmd);
 
-        cmd.consumer.tell(new PrintStarting());
-
-        currentTask = printAsync(cmd);
-
+        getContext().getSelf().tell(new PrintNext());
         return this;
     }
 
     private CompletableFuture<Void> printAsync(Print cmd) {
-        Logger log = getContext().getLog();
-        log.info("start printing document: {}", cmd.document.name());
+        var log = getContext().getLog();
         var ref = getContext().getSelf();
         //todo use circuit breaker here (akka.pattern.CircuitBreaker does not work)
         return CompletableFuture
-                .runAsync(() -> tryPrint(cmd), blockingExecutor)
+                .runAsync(() -> {
+                    log.info("start printing document: {}", cmd.document.name());
+                    cmd.consumer.tell(new PrintStarting());
+                    tryPrint(cmd);
+                }, blockingExecutor)
                 .thenRun(() -> {
                     log.info("print complete: {}", cmd.document.name());
                     cmd.consumer.tell(new PrintComplete());
@@ -149,7 +140,6 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
     private Behavior<PrinterImpl.Command> onCancel() {
         if (!currentTask.isDone()) {
             printer.stop();
-            currentTask.cancel(true);
         }
         return this;
     }

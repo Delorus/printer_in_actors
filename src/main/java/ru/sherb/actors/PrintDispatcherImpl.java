@@ -154,16 +154,16 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
         return this;
     }
 
-    private Behavior<Command> onAddToPrintAndNotifyWhenDone(AddToPrintAndNotifyWhenDone cmd) {
-        listeners.put(counter, cmd.replyTo);
-        return onAddToPrint(new AddToPrint(cmd.document));
-    }
-
     private static String formatName(String docName) {
         if (docName.length() > 35) {
             docName = docName.substring(0, 35);
         }
         return URLEncoder.encode(docName, StandardCharsets.UTF_8);
+    }
+
+    private Behavior<Command> onAddToPrintAndNotifyWhenDone(AddToPrintAndNotifyWhenDone cmd) {
+        listeners.put(counter, cmd.replyTo);
+        return onAddToPrint(new AddToPrint(cmd.document));
     }
 
     private Behavior<Command> onAddToQueue(AddToQueueDocument cmd) {
@@ -185,16 +185,17 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
         if (listeners.containsKey(cmd.id)) {
             listeners.remove(cmd.id).tell(PrintResult.COMPLETE);
         }
-//        getContext().getLog().info("complete printing: {}", document.name());
+        getContext().getLog().info("complete printing: {}", document.name());
         return this;
     }
 
     private Behavior<Command> onRemoveInProgress(RemoveInProgressDocument cmd) {
-        this.inProgress.remove(cmd.id);
+        var cancelled = this.inProgress.remove(cmd.id);
 
         if (listeners.containsKey(cmd.id)) {
             listeners.remove(cmd.id).tell(PrintResult.CANCELLED);
         }
+        getContext().getLog().info("cancel printing: {}", cancelled.name());
         return this;
     }
 
@@ -209,6 +210,7 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
         List<Printable> notPrinted = new ArrayList<>(inWaiting.values());
         notPrinted.addAll(inQueue.values());
         notPrinted.addAll(inProgress.values());
+        notPrinted.sort(Comparator.comparing(Printable::name));
 
         var response = new NotPrintedDocuments(notPrinted);
         cmd.replyTo.tell(response);
