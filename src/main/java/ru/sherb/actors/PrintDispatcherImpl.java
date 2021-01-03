@@ -44,6 +44,13 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
     }
 
     @Value
+    public static class NotifyAfterAllComplete implements Command {
+        ActorRef<AllDocumentsArePrintedEvent> observer;
+    }
+
+    public static class AllDocumentsArePrintedEvent { }
+
+    @Value
     public static class CancelCurrentPrint implements Command { }
 
     @Value
@@ -113,7 +120,8 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
     private final Map<Long, Printable> inProgress = new HashMap<>();
     private final Map<Long, Printable> inComplete = new HashMap<>();
 
-    private final Map<Long, ActorRef<PrintResult>> listeners = new HashMap<>();
+    private final Map<Long, ActorRef<PrintResult>> docPrintedListeners = new HashMap<>();
+    private final List<ActorRef<AllDocumentsArePrintedEvent>> printCompleteListeners = new ArrayList<>();
 
     private long counter = Long.MIN_VALUE;
 
@@ -131,6 +139,7 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
                 .onMessage(StopPrint.class, this::onStopPrint)
                 .onMessage(GetPrintedList.class, this::onGetPrintedList)
                 .onMessage(GetAvgPrintedTime.class, this::onGetAvgPrintedTime)
+                .onMessage(NotifyAfterAllComplete.class, this::onNotifyAfterAllComplete)
                 // inner interface
                 .onMessage(AddToQueueDocument.class, this::onAddToQueue)
                 .onMessage(AddToProgressDocument.class, this::onAddToProgress)
@@ -162,7 +171,7 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
     }
 
     private Behavior<Command> onAddToPrintAndNotifyWhenDone(AddToPrintAndNotifyWhenDone cmd) {
-        listeners.put(counter, cmd.replyTo);
+        docPrintedListeners.put(counter, cmd.replyTo);
         return onAddToPrint(new AddToPrint(cmd.document));
     }
 
@@ -182,8 +191,14 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
         var document = this.inProgress.remove(cmd.id);
         this.inComplete.put(cmd.id, document);
 
-        if (listeners.containsKey(cmd.id)) {
-            listeners.remove(cmd.id).tell(PrintResult.COMPLETE);
+        if (docPrintedListeners.containsKey(cmd.id)) {
+            docPrintedListeners.remove(cmd.id).tell(PrintResult.COMPLETE);
+        }
+        if (!printCompleteListeners.isEmpty() && isAllDocumentArePrinted()) {
+            var event = new AllDocumentsArePrintedEvent();
+            for (ActorRef<AllDocumentsArePrintedEvent> listener : printCompleteListeners) {
+                listener.tell(event);
+            }
         }
         getContext().getLog().info("complete printing: {}", document.name());
         return this;
@@ -192,8 +207,14 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
     private Behavior<Command> onRemoveInProgress(RemoveInProgressDocument cmd) {
         var cancelled = this.inProgress.remove(cmd.id);
 
-        if (listeners.containsKey(cmd.id)) {
-            listeners.remove(cmd.id).tell(PrintResult.CANCELLED);
+        if (docPrintedListeners.containsKey(cmd.id)) {
+            docPrintedListeners.remove(cmd.id).tell(PrintResult.CANCELLED);
+        }
+        if (!printCompleteListeners.isEmpty() && isAllDocumentArePrinted()) {
+            var event = new AllDocumentsArePrintedEvent();
+            for (ActorRef<AllDocumentsArePrintedEvent> listener : printCompleteListeners) {
+                listener.tell(event);
+            }
         }
         getContext().getLog().info("cancel printing: {}", cancelled.name());
         return this;
@@ -232,6 +253,10 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
                     this.onGetAvgPrintedTime(c);
                     return Behaviors.same();
                 })
+                .onMessage(NotifyAfterAllComplete.class, c -> {
+                    c.observer.tell(new AllDocumentsArePrintedEvent());
+                    return Behaviors.same();
+                })
                 .onAnyMessage(__ -> Behaviors.ignore()) //todo how it works?
                 .build();
     }
@@ -256,5 +281,18 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
         cmd.replyTo.tell(new AvgPrintedTime(Duration.ofMillis(avgWithoutNanos)));
 
         return this;
+    }
+
+    private Behavior<Command> onNotifyAfterAllComplete(NotifyAfterAllComplete cmd) {
+        if (isAllDocumentArePrinted()) {
+            cmd.observer.tell(new AllDocumentsArePrintedEvent());
+        } else {
+            this.printCompleteListeners.add(cmd.observer);
+        }
+        return this;
+    }
+
+    private boolean isAllDocumentArePrinted() {
+        return inWaiting.isEmpty() && inQueue.isEmpty() && inProgress.isEmpty();
     }
 }

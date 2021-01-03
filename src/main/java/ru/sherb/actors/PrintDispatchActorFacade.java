@@ -100,4 +100,13 @@ public class PrintDispatchActorFacade implements PrintDispatcher {
 
         return result.toCompletableFuture();
     }
+
+    void waitForAllComplete() throws ExecutionException, InterruptedException {
+        AskPattern.ask(
+                dispatcher,
+                PrintDispatcherImpl.NotifyAfterAllComplete::new,
+                Duration.ofSeconds(1),
+                dispatcher.scheduler()
+        ).toCompletableFuture().get();
+    }
 }

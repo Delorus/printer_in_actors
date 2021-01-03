@@ -1,6 +1,5 @@
 package ru.sherb.actors;
 
-import org.junit.jupiter.api.Disabled;
 import org.junit.jupiter.api.Test;
 import ru.sherb.printer.ISOPaperSizes;
 import ru.sherb.printer.Printable;
@@ -9,11 +8,14 @@ import java.time.Duration;
 import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 /**
  * @author maksim
@@ -22,7 +24,7 @@ import static org.junit.jupiter.api.Assertions.*;
 class PrintDispatchActorFacadeTest {
 
     @Test
-    public void testPrintOneFile() throws InterruptedException {
+    public void testPrintOneFile() throws InterruptedException, ExecutionException {
         // Setup
         var printer = new MockPrinter();
         var printDispatcher = PrintDispatchActorFacade.start(printer);
@@ -39,7 +41,7 @@ class PrintDispatchActorFacadeTest {
     }
 
     @Test
-    public void testPrintMultipleFiles() throws InterruptedException {
+    public void testPrintMultipleFiles() throws InterruptedException, ExecutionException {
         // Setup
         var printer = new MockPrinter();
         var printDispatcher = PrintDispatchActorFacade.start(printer);
@@ -65,6 +67,7 @@ class PrintDispatchActorFacadeTest {
         assertEquals(documents.get(8), printer.printedDocument());
         assertEquals(documents.get(9), printer.printedDocument());
 
+        printDispatcher.waitForAllComplete();
         List<Printable> printed = printDispatcher.listPrinted();
         assertEquals(10, printed.size());
 
@@ -156,17 +159,17 @@ class PrintDispatchActorFacadeTest {
     }
 
     @Test
-    public void testGetPrintedOrderDocs() throws InterruptedException, ExecutionException {
+    public void testGetPrintedOrderDocs() throws InterruptedException, ExecutionException, TimeoutException {
         // Setup
         var printer = new MockPrinter();
         var printDispatcher = PrintDispatchActorFacade.start(printer);
         var first = new MockDocument().name("a");
         var second = new MockDocument().name("b");
         printDispatcher.addToPrint(first);
-        var handle = printDispatcher.addToPrintAndWait(second);
+        printDispatcher.addToPrint(second);
         printer.skip();
         printer.skip();
-        handle.get();
+        printDispatcher.waitForAllComplete();
 
         // When
         var printedList = printDispatcher.listPrinted();
@@ -191,9 +194,10 @@ class PrintDispatchActorFacadeTest {
         printDispatcher.addToPrint(notPrinted);
         printer.skip();
         printer.waitForStartPrinting();
-        printDispatcher.cancelCurrent();
 
         // When
+        printDispatcher.cancelCurrent();
+        printDispatcher.waitForAllComplete();
         var printedList = printDispatcher.listPrinted();
 
         // Then
@@ -205,10 +209,11 @@ class PrintDispatchActorFacadeTest {
     }
 
     @Test
-    public void testReturnEmptyPrintedList() {
+    public void testReturnEmptyPrintedList() throws ExecutionException, InterruptedException {
         // Setup
         var printer = new MockPrinter();
         var printDispatcher = PrintDispatchActorFacade.start(printer);
+        printDispatcher.waitForAllComplete();
 
         // When
         var printedList = printDispatcher.listPrinted();
@@ -245,6 +250,7 @@ class PrintDispatchActorFacadeTest {
         printer.skip();
         printer.skip();
         printer.skip();
+        printDispatcher.waitForAllComplete();
 
         // When
         var paperSizeSorted = printDispatcher.listPrinted(Comparator.comparing(d -> d.size().width()));
@@ -293,6 +299,7 @@ class PrintDispatchActorFacadeTest {
         printDispatcher.addToPrint(second);
         printer.skip();
         printer.skip();
+        printDispatcher.waitForAllComplete();
 
         // When
         Duration avg = printDispatcher.avgPrintedTime();
