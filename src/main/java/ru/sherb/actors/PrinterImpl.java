@@ -18,6 +18,7 @@ import java.util.Queue;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
+import java.util.concurrent.CompletionStage;
 
 /**
  * @author maksim
@@ -57,7 +58,7 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
 
     private final Queue<Print> queue = new LinkedList<>();
 
-    private CompletableFuture<Void> currentTask = CompletableFuture.completedFuture(null);
+    private volatile boolean isWorking = false;
 
 
     public PrinterImpl(ActorContext<Command> ctx, Printer printer) {
@@ -81,14 +82,16 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
     private Behavior<PrinterImpl.Command> onPrint(Print cmd) {
         cmd.consumer.tell(new DocumentAddedToQueue());
         queue.add(cmd);
+        getContext().getLog().info("added to queue: {}", cmd.document.name());
 
         getContext().getSelf().tell(new PrintNext());
         return this;
     }
 
-    private CompletableFuture<Void> printAsync(Print cmd) {
+    private CompletionStage<Void> printAsync(Print cmd) {
         var log = getContext().getLog();
         var ref = getContext().getSelf();
+        isWorking = true;
         //todo use circuit breaker here (akka.pattern.CircuitBreaker does not work)
         return CompletableFuture
                 .runAsync(() -> {
@@ -97,11 +100,13 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
                     tryPrint(cmd);
                 }, blockingExecutor)
                 .thenRun(() -> {
+                    isWorking = false;
                     log.info("print complete: {}", cmd.document.name());
                     cmd.consumer.tell(new PrintComplete());
                     ref.tell(new PrintNext());
                 })
                 .exceptionally(err -> {
+                    isWorking = false;
                     if (isCancelled(err)) {
                         log.info("print cancelled: {}", cmd.document.name());
                         cmd.consumer.tell(new PrintCancelled());
@@ -129,16 +134,18 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
     }
 
     private Behavior<PrinterImpl.Command> onPrintNext() {
-        if (queue.isEmpty() || !currentTask.isDone()) {
+        if (queue.isEmpty() || isWorking) {
             return this;
         }
 
-        currentTask = printAsync(queue.poll());
+        Print cmd = queue.poll();
+        getContext().getLog().info("print next: {}", cmd.document.name());
+        printAsync(cmd);
         return this;
     }
 
     private Behavior<PrinterImpl.Command> onCancel() {
-        if (!currentTask.isDone()) {
+        if (isWorking) {
             printer.stop();
         }
         return this;
