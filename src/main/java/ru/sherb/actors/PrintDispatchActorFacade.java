@@ -91,16 +91,6 @@ public class PrintDispatchActorFacade implements PrintDispatcher {
         dispatcher.terminate();
     }
 
-    Future<PrintDispatcherImpl.PrintResult> addToPrintAndWait(Printable document) {
-        CompletionStage<PrintDispatcherImpl.PrintResult> result = AskPattern.ask(
-                dispatcher,
-                ref -> new PrintDispatcherImpl.AddToPrintAndNotifyWhenDone(ref, document),
-                Duration.ofSeconds(1),
-                dispatcher.scheduler());
-
-        return result.toCompletableFuture();
-    }
-
     void waitForAllComplete() throws ExecutionException, InterruptedException {
         AskPattern.ask(
                 dispatcher,

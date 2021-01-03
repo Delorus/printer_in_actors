@@ -82,7 +82,6 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
     private Behavior<PrinterImpl.Command> onPrint(Print cmd) {
         cmd.consumer.tell(new DocumentAddedToQueue());
         queue.add(cmd);
-        getContext().getLog().info("added to queue: {}", cmd.document.name());
 
         getContext().getSelf().tell(new PrintNext());
         return this;
@@ -95,26 +94,22 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
         //todo use circuit breaker here (akka.pattern.CircuitBreaker does not work)
         return CompletableFuture
                 .runAsync(() -> {
-                    log.info("start printing document: {}", cmd.document.name());
                     cmd.consumer.tell(new PrintStarting());
                     tryPrint(cmd);
                 }, blockingExecutor)
                 .thenRun(() -> {
                     isWorking = false;
-                    log.info("print complete: {}", cmd.document.name());
                     cmd.consumer.tell(new PrintComplete());
                     ref.tell(new PrintNext());
                 })
                 .exceptionally(err -> {
                     isWorking = false;
                     if (isCancelled(err)) {
-                        log.info("print cancelled: {}", cmd.document.name());
                         cmd.consumer.tell(new PrintCancelled());
                         ref.tell(new PrintNext());
                         return null;
 
                     } else {
-                        log.error("print failed: {}", cmd.document.name());
                         throw new CancellationException(err.getMessage());
                     }
                 });
@@ -139,7 +134,6 @@ public class PrinterImpl extends AbstractBehavior<PrinterImpl.Command> {
         }
 
         Print cmd = queue.poll();
-        getContext().getLog().info("print next: {}", cmd.document.name());
         printAsync(cmd);
         return this;
     }
