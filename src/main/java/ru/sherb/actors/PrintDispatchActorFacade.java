@@ -12,7 +12,6 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.concurrent.CompletionStage;
 import java.util.concurrent.ExecutionException;
-import java.util.concurrent.Future;
 
 /**
  * @author maksim

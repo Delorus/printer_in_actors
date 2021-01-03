@@ -116,6 +116,33 @@ class PrintDispatchActorFacadeTest {
     }
 
     @Test
+    public void testNotPrintingAfterStop() throws ExecutionException, InterruptedException {
+        // Setup
+        var printer = new MockPrinter();
+        var printDispatcher = PrintDispatchActorFacade.start(printer);
+        printDispatcher.addToPrint(new MockDocument().name("printed").printDuration(Duration.ofSeconds(1)));
+        printer.skip();
+        printDispatcher.waitForAllComplete();
+
+        // When
+        printDispatcher.stopPrint();
+        printDispatcher.addToPrint(new MockDocument().name("not printed").printDuration(Duration.ofSeconds(2)));
+        printDispatcher.waitForAllComplete();
+        var printed = printDispatcher.listPrinted();
+        var avgPrintedTime = printDispatcher.avgPrintedTime();
+        var unprinted = printDispatcher.stopPrint();
+
+        // Then
+        assertEquals(1, printed.size());
+        assertEquals("printed", printed.get(0).name());
+        assertEquals(1000, avgPrintedTime.toMillis());
+        assertEquals(0, unprinted.size());
+
+        // Cleanup
+        printDispatcher.stop();
+    }
+
+    @Test
     public void testCancelActiveDoc() throws InterruptedException {
         // Setup
         var printer = new MockPrinter();

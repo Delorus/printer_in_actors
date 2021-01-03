@@ -229,7 +229,6 @@ public class PrintDispatcherImpl extends AbstractBehavior<PrintDispatcherImpl.Co
                     c.observer.tell(new AllDocumentsArePrintedEvent());
                     return Behaviors.same();
                 })
-                .onAnyMessage(__ -> Behaviors.ignore()) //todo how it works?
                 .build();
     }
 
